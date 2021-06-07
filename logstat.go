@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,10 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-type Statistics struct {
-	TotalCount prometheus.Counter
-}
 
 var (
 	BUFFER       *ring.Ring
@@ -54,16 +49,43 @@ func version() string {
 }
 
 func httpRoot(res http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(res, "%s\n", version())
-	fmt.Fprintf(res, "%19s:%13s:%10s:%15s:%30s:%12s:\"%s\"\n", "timestamp", "severity", "facility", "source", "host", "appl", "message")
-	fmt.Fprintf(res, "--\n")
+	var c, v string
+	p := strings.Split(req.RequestURI, "/")
+	if len(p) == 3 || len(p) == 4 {
+		c = p[1]
+		v = p[2]
+	}
 
 	BUFFER.Do(func(p interface{}) {
 		if p == nil {
 			return
 		}
 		m := p.(SyslogMessage)
-		fmt.Fprintf(res, "%19s:%13s:%10s:%15s:%30s:%12s:\"%s\"\n", m.Timestamp.Format("2006-01-02 15:04:05"), m.Severity(), m.Facility(), m.Source, m.Host, m.Application, m.Message)
+		if c != "" {
+			switch c {
+			case "severity":
+				if m.Severity().String() != v {
+					return
+				}
+			case "facility":
+				if m.Facility().String() != v {
+					return
+				}
+			case "source":
+				if m.Source != v {
+					return
+				}
+			case "app":
+				if m.Application != v {
+					return
+				}
+			case "host":
+				if m.Host != v {
+					return
+				}
+			}
+		}
+		fmt.Fprintf(res, "%s\n", m)
 	})
 }
 
@@ -81,105 +103,15 @@ func httpServer(port int) *http.Server {
 	return &s
 }
 
-type SyslogMessage struct {
-	Priority    int
-	Timestamp   time.Time
-	Host        string
-	Application string
-	Message     string
-	Source      string
-}
+func parseSyslogSource(text string) string {
+	var src string
 
-type SyslogMessageSeverity int
-
-func (s SyslogMessageSeverity) String() string {
-	switch s {
-	case 0:
-		return "emergency"
-	case 1:
-		return "alert"
-	case 2:
-		return "critical"
-	case 3:
-		return "error"
-	case 4:
-		return "warning"
-	case 5:
-		return "notice"
-	case 6:
-		return "informational"
-	case 7:
-		return "debug"
-	default:
-		return "unknown"
+	p := strings.Split(text, ":")
+	if len(p) > 1 {
+		src = p[0]
 	}
-}
 
-type SyslogMessageFacility int
-
-func (f SyslogMessageFacility) String() string {
-	switch f {
-	case 0:
-		return "kernel"
-	case 1:
-		return "user"
-	case 2:
-		return "mail"
-	case 3:
-		return "system"
-	case 4:
-		return "security"
-	case 5:
-		return "internal"
-	case 6:
-		return "lineprinter"
-	case 7:
-		return "networknews"
-	case 8:
-		return "uucp"
-	case 9:
-		return "clock"
-	case 10:
-		return "security"
-	case 11:
-		return "ftp"
-	case 12:
-		return "ntp"
-	case 13:
-		return "logaudit"
-	case 14:
-		return "logalert"
-	case 15:
-		return "clock"
-	case 16:
-		return "local0"
-	case 17:
-		return "local1"
-	case 18:
-		return "local2"
-	case 19:
-		return "local3"
-	case 20:
-		return "local4"
-	case 21:
-		return "local5"
-	case 22:
-		return "local6"
-	case 23:
-		return "local7"
-	default:
-		return "unknown"
-	}
-}
-
-func (sm SyslogMessage) Severity() SyslogMessageSeverity {
-	s := sm.Priority & 7
-	return SyslogMessageSeverity(s)
-}
-
-func (sm SyslogMessage) Facility() SyslogMessageFacility {
-	f := sm.Priority >> 3
-	return SyslogMessageFacility(f)
+	return src
 }
 
 func parseSyslog(text string) (SyslogMessage, error) {
@@ -207,10 +139,16 @@ func parseSyslog(text string) (SyslogMessage, error) {
 		ts = now
 	}
 
+	app := m[0][4]
+	bPos := strings.Index(app, "[")
+	if bPos > 0 {
+		app = app[:bPos]
+	}
+
 	sm.Priority = pri
 	sm.Timestamp = time.Date(now.Year(), ts.Month(), ts.Day(), ts.Hour(), ts.Minute(), ts.Second(), now.Nanosecond(), now.Location())
 	sm.Host = m[0][3]
-	sm.Application = m[0][4]
+	sm.Application = app
 	sm.Message = strings.Trim(m[0][5], " ")
 
 	return sm, nil
@@ -238,13 +176,7 @@ func main() {
 			log.Println(err)
 		}
 
-		p := strings.Split(a.String(), ":")
-		var src string
-		if len(p) > 1 {
-			src = p[0]
-		} else {
-			src = a.String()
-		}
+		src := parseSyslogSource(a.String())
 
 		b := string(buffer[:n])
 		m, err := parseSyslog(b)
@@ -255,8 +187,6 @@ func main() {
 		}
 
 		m.Source = src
-
-		log.Printf("%s:%d:%s(%d):%s(%d):%s:%s:%s:\"%s\"\n", m.Timestamp.Format("2006-01-02 15:04:05"), m.Priority, m.Severity(), m.Severity(), m.Facility(), m.Facility(), m.Source, m.Host, m.Application, m.Message)
 
 		if _, ok := SOURCE_COUNT[src]; !ok {
 			SOURCE_COUNT[src] = promauto.NewCounterVec(prometheus.CounterOpts{Name: "logstat_source_count", Help: "Messages processed"}, []string{"source", "host", "app", "severity", "facility"})
@@ -275,5 +205,4 @@ func main() {
 	}
 
 	log.Printf("exiting\n")
-	os.Exit(0)
 }
