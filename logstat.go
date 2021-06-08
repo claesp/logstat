@@ -20,7 +20,7 @@ import (
 
 var (
 	BUFFER       *ring.Ring
-	BUFFER_SIZE  = 1000
+	BUFFER_SIZE  = 10000
 	HTTP_PORT    = 8080
 	MAJOR        = 0
 	MINOR        = 0
@@ -28,7 +28,7 @@ var (
 	REVISION     = 20210603
 	SOURCE_COUNT = make(map[string]*prometheus.CounterVec)
 	SOURCE_BYTES = make(map[string]*prometheus.CounterVec)
-	SYSLOG_PORT  = 1514
+	SYSLOG_PORT  = 60514
 	TOTAL_BYTES  *prometheus.CounterVec
 	TOTAL_COUNT  *prometheus.CounterVec
 	TOTAL_FAILS  prometheus.Counter
