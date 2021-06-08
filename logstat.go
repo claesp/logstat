@@ -49,11 +49,11 @@ func version() string {
 }
 
 func httpRoot(res http.ResponseWriter, req *http.Request) {
-	var c, v string
+	var filterBy, filterValue string
 	p := strings.Split(req.RequestURI, "/")
 	if len(p) == 3 || len(p) == 4 {
-		c = p[1]
-		v = p[2]
+		filterBy = strings.ToLower(p[1])
+		filterValue = strings.ToLower(p[2])
 	}
 
 	BUFFER.Do(func(p interface{}) {
@@ -61,30 +61,30 @@ func httpRoot(res http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m := p.(SyslogMessage)
-		if c != "" {
-			switch c {
-			case "severity":
-				if m.Severity().String() != v {
-					return
-				}
-			case "facility":
-				if m.Facility().String() != v {
-					return
-				}
-			case "source":
-				if m.Source != v {
-					return
-				}
-			case "app":
-				if m.Application != v {
-					return
-				}
-			case "host":
-				if m.Host != v {
-					return
-				}
+
+		switch filterBy {
+		case "severity":
+			if strings.ToLower(m.Severity().String()) != filterValue {
+				return
+			}
+		case "facility":
+			if strings.ToLower(m.Facility().String()) != filterValue {
+				return
+			}
+		case "source":
+			if strings.ToLower(m.Source) != filterValue {
+				return
+			}
+		case "app":
+			if strings.ToLower(m.Application) != filterValue {
+				return
+			}
+		case "host":
+			if strings.ToLower(m.Host) != filterValue {
+				return
 			}
 		}
+
 		fmt.Fprintf(res, "%s\n", m)
 	})
 }
@@ -194,6 +194,7 @@ func main() {
 			REGISTRY.Register(SOURCE_COUNT[src])
 			REGISTRY.Register(SOURCE_BYTES[src])
 		}
+
 		SOURCE_COUNT[src].With(prometheus.Labels{"source": src, "host": m.Host, "app": m.Application, "facility": m.Facility().String(), "severity": m.Severity().String()}).Inc()
 		SOURCE_BYTES[src].With(prometheus.Labels{"source": src, "host": m.Host, "app": m.Application, "facility": m.Facility().String(), "severity": m.Severity().String()}).Add(float64(n))
 
