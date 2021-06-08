@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,6 +35,27 @@ var (
 )
 
 func init() {
+	if bs := os.Getenv("BUFFER_SIZE"); len(bs) > 0 {
+		bsi, err := strconv.Atoi(bs)
+		if err == nil {
+			BUFFER_SIZE = bsi
+		}
+	}
+
+	if hp := os.Getenv("HTTP_PORT"); len(hp) > 0 {
+		hpi, err := strconv.Atoi(hp)
+		if err == nil {
+			HTTP_PORT = hpi
+		}
+	}
+
+	if sp := os.Getenv("SYSLOG_PORT"); len(sp) > 0 {
+		spi, err := strconv.Atoi(sp)
+		if err == nil {
+			SYSLOG_PORT = spi
+		}
+	}
+
 	REGISTRY = prometheus.NewRegistry()
 	TOTAL_BYTES = promauto.NewCounterVec(prometheus.CounterOpts{Name: "logstat_bytes_total", Help: "Total bytes processed"}, []string{"app", "severity", "facility"})
 	TOTAL_COUNT = promauto.NewCounterVec(prometheus.CounterOpts{Name: "logstat_count_total", Help: "Total messages processed"}, []string{"app", "severity", "facility"})
@@ -156,6 +178,7 @@ func parseSyslog(text string) (SyslogMessage, error) {
 
 func main() {
 	log.Printf("%s", version())
+	log.Printf("BUFFER_SIZE is %d\n", BUFFER_SIZE)
 	log.Printf("listening on tcp://0.0.0.0:%d for HTTP\n", HTTP_PORT)
 	go func() {
 		hsrv := httpServer(HTTP_PORT)

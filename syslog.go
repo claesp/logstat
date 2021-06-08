@@ -19,19 +19,19 @@ type SyslogMessageSeverity int
 func (s SyslogMessageSeverity) String() string {
 	switch s {
 	case 0:
-		return "emergency"
+		return "emerg"
 	case 1:
 		return "alert"
 	case 2:
-		return "critical"
+		return "crit"
 	case 3:
 		return "error"
 	case 4:
-		return "warning"
+		return "warn"
 	case 5:
 		return "notice"
 	case 6:
-		return "informational"
+		return "info"
 	case 7:
 		return "debug"
 	default:
@@ -107,5 +107,5 @@ func (sm SyslogMessage) Facility() SyslogMessageFacility {
 }
 
 func (sm SyslogMessage) String() string {
-	return fmt.Sprintf("%-19s,%-13s,%-10s,%-15s,%-30s,%-12s,\"%s\"", sm.Timestamp.Format("2006-01-02 15:04:05"), sm.Severity(), sm.Facility(), sm.Source, sm.Host, sm.Application, sm.Message)
+	return fmt.Sprintf("%-19s %-7s %-11s %-15s %-30s %-12s \"%s\"", sm.Timestamp.Format("2006-01-02 15:04:05"), sm.Severity(), sm.Facility(), sm.Source, sm.Host, sm.Application, sm.Message)
 }
