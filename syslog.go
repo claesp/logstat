@@ -94,19 +94,19 @@ func (f SyslogMessageFacility) String() string {
 	case SyslogMessageFacilitySystem:
 		return "system"
 	case SyslogMessageFacilitySecurity:
-		return "security"
+		return "auth"
 	case SyslogMessageFacilityInternal:
 		return "internal"
 	case SyslogMessageFacilityLineprinter:
-		return "lineprinter"
+		return "lpr"
 	case SyslogMessageFacilityNetworkNews:
-		return "networknews"
+		return "news"
 	case SyslogMessageFacilityUucp:
 		return "uucp"
 	case SyslogMessageFacilityClock:
 		return "clock"
 	case SyslogMessageFacilitySecurityAuth:
-		return "security-auth"
+		return "auth-priv"
 	case SyslogMessageFacilityFtp:
 		return "ftp"
 	case SyslogMessageFacilityNtp:

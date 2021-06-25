@@ -109,7 +109,7 @@ func httpRoot(res http.ResponseWriter, req *http.Request) {
 		messages = append(messages, m)
 	})
 
-	t, err := template.New("root").Parse(`{{define "logs"}}<!DOCTYPE html><html><head><meta charset="utf-8"><title>logstat</title><style type="text/css">body {font-family: monospace;}</style></head><body><table><tbody>{{range .}}<tr><td>{{.Timestamp}}</td></tr>{{end}}</tbody></table></body></html>{{end}}`)
+	t, err := template.New("root").Parse(`{{define "logs"}}<!DOCTYPE html><html><head><meta charset="utf-8"><title>logstat</title><style type="text/css">body {font-family: monospace;} table {width:100%;}</style></head><body><table><tbody>{{range .}}<tr><td>{{.Timestamp.Format "2006/01/02 15:04:05"}}</td><td><a href="/severity/{{.Severity}}/" title="Filter by severity '{{.Severity}}'">{{.Severity}}</a></td><td><a href="/facility/{{.Facility}}/" title="Filter by facility '{{.Facility}}'">{{.Facility}}</a></td><td><a href="/source/{{.Source}}/" title="Filter by source '{{.Source}}'">{{.Source}}</a></td><td><a href="/host/{{.Host}}/" title="Filter by host '{{.Host}}'">{{.Host}}</a></td><td><a href="/app/{{.Application}}/" title="Filter by application '{{.Application}}'">{{.Application}}</a></td><td>{{.Message}}</td></tr>{{end}}</tbody></table></body></html>{{end}}`)
 	err = t.ExecuteTemplate(res, "logs", messages)
 	if err != nil {
 		fmt.Fprintf(res, "%v", err)
