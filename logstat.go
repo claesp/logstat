@@ -2,16 +2,14 @@ package main
 
 import (
 	"container/ring"
-	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -78,6 +76,7 @@ func httpRoot(res http.ResponseWriter, req *http.Request) {
 		filterValue = strings.ToLower(p[2])
 	}
 
+	messages := make([]SyslogMessage, 0)
 	BUFFER.Do(func(p interface{}) {
 		if p == nil {
 			return
@@ -107,8 +106,14 @@ func httpRoot(res http.ResponseWriter, req *http.Request) {
 			}
 		}
 
-		fmt.Fprintf(res, "%s\n", m)
+		messages = append(messages, m)
 	})
+
+	t, err := template.New("root").Parse(`{{define "logs"}}<!DOCTYPE html><html><head><meta charset="utf-8"><title>logstat</title><style type="text/css">body {font-family: monospace;}</style></head><body><table><tbody>{{range .}}<tr><td>{{.Timestamp}}</td></tr>{{end}}</tbody></table></body></html>{{end}}`)
+	err = t.ExecuteTemplate(res, "logs", messages)
+	if err != nil {
+		fmt.Fprintf(res, "%v", err)
+	}
 }
 
 func httpServer(port int) *http.Server {
@@ -134,46 +139,6 @@ func parseSyslogSource(text string) string {
 	}
 
 	return src
-}
-
-func parseSyslog(text string) (SyslogMessage, error) {
-	sm := SyslogMessage{}
-
-	r := regexp.MustCompile(`\<([0-9]{1,3})\>([A-Za-z]{1,3}.*[0-9]{1,2})[ ]{1}([A-Za-z0-9-_]+)[ ]{1}([A-Za-z0-9-_\[\]]+)[:]{1}(.*)`)
-	m := r.FindAllStringSubmatch(text, -1)
-
-	if len(m) < 1 {
-		return sm, errors.New(fmt.Sprintf("unable to parse ('%s')", text))
-	}
-
-	if len(m[0]) < 5 {
-		return sm, errors.New(fmt.Sprintf("unable to parse ('%s')", text))
-	}
-
-	pri, err := strconv.Atoi(m[0][1])
-	if err != nil {
-		pri = 0
-	}
-
-	ts, err := time.Parse(time.Stamp, m[0][2])
-	now := time.Now()
-	if err != nil {
-		ts = now
-	}
-
-	app := m[0][4]
-	bPos := strings.Index(app, "[")
-	if bPos > 0 {
-		app = app[:bPos]
-	}
-
-	sm.Priority = pri
-	sm.Timestamp = time.Date(now.Year(), ts.Month(), ts.Day(), ts.Hour(), ts.Minute(), ts.Second(), now.Nanosecond(), now.Location())
-	sm.Host = m[0][3]
-	sm.Application = app
-	sm.Message = strings.Trim(m[0][5], " ")
-
-	return sm, nil
 }
 
 func main() {
@@ -202,7 +167,7 @@ func main() {
 		src := parseSyslogSource(a.String())
 
 		b := string(buffer[:n])
-		m, err := parseSyslog(b)
+		m, err := ParseSyslog(b)
 		if err != nil {
 			TOTAL_FAILS.Inc()
 			log.Println(err)
