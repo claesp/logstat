@@ -10,12 +10,15 @@ import (
 )
 
 type SyslogMessage struct {
-	Priority    int
-	Timestamp   time.Time
-	Host        string
-	Application string
-	Message     string
-	Source      string
+	Priority          int
+	Timestamp         time.Time
+	TimestampOriginal time.Time
+	Host              string
+	Application       string
+	Message           string
+	Source            string
+	Original          string
+	Diff              time.Duration
 }
 
 type SyslogMessageSeverity int
@@ -166,7 +169,8 @@ func ParseSyslogSource(text string) string {
 func ParseSyslog(text string) (SyslogMessage, error) {
 	sm := SyslogMessage{}
 
-	r := regexp.MustCompile(`\<([0-9]{1,3})\>([A-Za-z]{1,3}.*[0-9]{1,2})[ ]{1}([A-Za-z0-9-_]+)[ ]{1}([A-Za-z0-9-_\[\]]+)[:]{1}(.*)`)
+	/*r := regexp.MustCompile(`\<([0-9]{1,3})\>([A-Za-z]{1,3}.*[0-9]{1,2})[ * ]{1}([A-Za-z0-9-_]+)[ ]{1}([A-Za-z0-9-_\[\]]+)[:]{1}(.*)`)*/
+	r := regexp.MustCompile(`^<([0-9]{1,3})>([A-Za-z]{3}\s{1,2}[0-9]{1,2}\s{1}[0-9]{2}:[0-9]{2}:[0-9]{2})\s{1}([A-Za-z\-_0-9]+)\s{1}([A-Za-z-_0-9]+)[\[\]0-9]*: {0,1}(.*)`)
 	m := r.FindAllStringSubmatch(text, -1)
 
 	if len(m) < 1 {
@@ -188,17 +192,13 @@ func ParseSyslog(text string) (SyslogMessage, error) {
 		ts = now
 	}
 
-	app := m[0][4]
-	bPos := strings.Index(app, "[") /* Removing PID in app name */
-	if bPos > 0 {
-		app = app[:bPos]
-	}
-
 	sm.Priority = pri
-	sm.Timestamp = time.Date(now.Year(), ts.Month(), ts.Day(), ts.Hour(), ts.Minute(), ts.Second(), now.Nanosecond(), now.Location())
+	sm.Timestamp = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), now.Location())
+	sm.TimestampOriginal = time.Date(now.Year(), ts.Month(), ts.Day(), ts.Hour(), ts.Minute(), ts.Second(), 0, now.Location())
 	sm.Host = m[0][3]
-	sm.Application = app
+	sm.Application = m[0][4]
 	sm.Message = strings.Trim(m[0][5], " ")
+	sm.Original = text
 
 	return sm, nil
 }

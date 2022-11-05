@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -18,7 +19,7 @@ import (
 
 var (
 	BUFFER       *ring.Ring
-	BUFFER_SIZE  = 10000
+	BUFFER_SIZE  = 100000
 	HTTP_PORT    = 8080
 	MAJOR        = 0
 	MINOR        = 0
@@ -68,6 +69,13 @@ func version() string {
 	return fmt.Sprintf("logstat %d.%d.%d\n", MAJOR, MINOR, REVISION)
 }
 
+type Page struct {
+	Title       string
+	FilterBy    string
+	FilterValue string
+	Messages    []SyslogMessage
+}
+
 func httpRoot(res http.ResponseWriter, req *http.Request) {
 	var filterBy, filterValue string
 	p := strings.Split(req.RequestURI, "/")
@@ -76,6 +84,9 @@ func httpRoot(res http.ResponseWriter, req *http.Request) {
 		filterValue = strings.ToLower(p[2])
 	}
 
+	page := Page{}
+	page.FilterBy = filterBy
+	page.FilterValue = filterValue
 	messages := make([]SyslogMessage, 0)
 	BUFFER.Do(func(p interface{}) {
 		if p == nil {
@@ -104,13 +115,49 @@ func httpRoot(res http.ResponseWriter, req *http.Request) {
 			if strings.ToLower(m.Host) != filterValue {
 				return
 			}
+		case "year":
+			if m.Timestamp.Format("2006") != filterValue {
+				return
+			}
+		case "month":
+			if m.Timestamp.Format("2006-01") != filterValue {
+				return
+			}
+		case "day":
+			if m.Timestamp.Format("2006-01-02") != filterValue {
+				return
+			}
+		case "hour":
+			if m.Timestamp.Format("2006-01-02t15") != filterValue {
+				return
+			}
+		case "minute":
+			if m.Timestamp.Format("2006-01-02t15:04") != filterValue {
+				return
+			}
+		case "time":
+			if m.Timestamp.Format("2006-01-02t15:04:05") != filterValue {
+				return
+			}
 		}
+
+		var prevTime time.Time
+		if len(messages) > 0 {
+			prev := messages[len(messages)-1]
+			prevTime = prev.Timestamp
+		} else {
+			prevTime = m.Timestamp
+		}
+		m.Diff = m.Timestamp.Sub(prevTime).Truncate(time.Millisecond)
 
 		messages = append(messages, m)
 	})
 
-	t, err := template.New("root").Parse(`{{define "logs"}}<!DOCTYPE html><html><head><meta charset="utf-8"><title>logstat</title><style type="text/css">body {font-family: monospace;} table {width:100%;}</style></head><body><table><tbody>{{range .}}<tr><td>{{.Timestamp.Format "2006/01/02 15:04:05"}}</td><td><a href="/severity/{{.Severity}}/" title="Filter by severity '{{.Severity}}'">{{.Severity}}</a></td><td><a href="/facility/{{.Facility}}/" title="Filter by facility '{{.Facility}}'">{{.Facility}}</a></td><td><a href="/source/{{.Source}}/" title="Filter by source '{{.Source}}'">{{.Source}}</a></td><td><a href="/host/{{.Host}}/" title="Filter by host '{{.Host}}'">{{.Host}}</a></td><td><a href="/app/{{.Application}}/" title="Filter by application '{{.Application}}'">{{.Application}}</a></td><td>{{.Message}}</td></tr>{{end}}</tbody></table></body></html>{{end}}`)
-	err = t.ExecuteTemplate(res, "logs", messages)
+	page.Title = fmt.Sprintf("logstat (%d/%d)", len(messages), BUFFER_SIZE)
+	page.Messages = messages
+
+	t, err := template.New("root").Parse(`{{define "logs"}}<!DOCTYPE html><html><head><meta charset="utf-8"><title>{{.Title}}</title><style type="text/css">body {font-family: monospace; margin: 1rem; padding: 0;} table {border-collapse: collapse;} td:nth-child(2), td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7), td:nth-child(8) {padding-left: 1em;} td:nth-child(2) {text-align: right;} td {white-space: nowrap;} a {text-decoration: none; color: grey;} a:hover {color: white; background-color: blue;}</style></head><body><table><tbody>{{range .Messages}}<tr><td><a href="/year/{{.Timestamp.Format "2006"}}/" title="Filter by year '{{.Timestamp.Format "2006"}}'">{{.Timestamp.Format "2006"}}</a>-<a href="/month/{{.Timestamp.Format "2006-01"}}/" title="Filter by month '{{.Timestamp.Format "2006-01"}}'">{{.Timestamp.Format "01"}}</a>-<a href="/day/{{.Timestamp.Format "2006-01-02"}}/" title="Filter by day '{{.Timestamp.Format "2006-01-02"}}'">{{.Timestamp.Format "02"}}</a> <a href="/hour/{{.Timestamp.Format "2006-01-02T15"}}/" title="Filter by hour '{{.Timestamp.Format "2006-01-02 15"}}'">{{.Timestamp.Format "15"}}</a>:<a href="/minute/{{.Timestamp.Format "2006-01-02T15:04"}}/" title="Filter by minute '{{.Timestamp.Format "2006-01-02 15:04"}}'">{{.Timestamp.Format "04"}}</a>:<a href="/time/{{.Timestamp.Format "2006-01-02T15:04:05"}}/" title="Filter by second '{{.Timestamp.Format "2006-01-02 15:04:05"}}'">{{.Timestamp.Format "05.000"}}</a></td><td>{{.Diff}}</td><td><a href="/severity/{{.Severity}}/" title="Filter by severity '{{.Severity}}'">{{.Severity}}</a></td><td><a href="/facility/{{.Facility}}/" title="Filter by facility '{{.Facility}}'">{{.Facility}}</a></td><td><a href="/source/{{.Source}}/" title="Filter by source '{{.Source}}'">{{.Source}}</a></td><td><a href="/host/{{.Host}}/" title="Filter by host '{{.Host}}'">{{.Host}}</a></td><td><a href="/app/{{.Application}}/" title="Filter by application '{{.Application}}'">{{.Application}}</a></td><td>{{.Message}}</td></tr>{{end}}</tbody></table></body></html>{{end}}`)
+	err = t.ExecuteTemplate(res, "logs", page)
 	if err != nil {
 		fmt.Fprintf(res, "%v", err)
 	}
@@ -157,6 +204,12 @@ func main() {
 	}
 	defer srv.Close()
 
+	/*conn, err := kafka.DialLeader(context.Background(), "tcp", "127.0.0.1:9092", "gcse-prod-syslog-raw", 0)
+	if err != nil {
+		log.Println("failed to dial leader:", err)
+	}
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))*/
+
 	buffer := make([]byte, 1024)
 	for {
 		n, a, err := srv.ReadFromUDP(buffer)
@@ -191,7 +244,16 @@ func main() {
 
 		BUFFER.Value = m
 		BUFFER = BUFFER.Next()
+
+		/* _, err = conn.WriteMessages(kafka.Message{Value: []byte(b)})
+		if err != nil {
+			log.Println("failed to write messages:", err)
+		} */
 	}
+
+	/* if err := conn.Close(); err != nil {
+		log.Fatal("failed to close writer:", err)
+	} */
 
 	log.Printf("exiting\n")
 }
